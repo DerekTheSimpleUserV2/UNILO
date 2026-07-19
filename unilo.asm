@@ -1,57 +1,46 @@
-; UNILO Bootloader - Menu Básico
-; Ensamblador NASM, 512 bytes (MBR)
+; UNILO Bootloader BIOS (x86 real mode)
+; Compilar con: nasm -f bin unilo.asm -o unilo.bin
 
-BITS 16
-ORG 0x7C00
+org 0x7C00                ; dirección donde BIOS carga el MBR
 
 start:
-    ; Limpiar pantalla
-    mov ah, 0x00
-    mov al, 0x03
-    int 0x10
+    ; Guardar unidad de arranque (BIOS pasa en DL)
+    mov [boot_drive], dl
 
-    ; Mostrar menú
-    mov si, menu_text
-    call print_string
+    ; Configurar lectura de disco
+    mov ah, 0x02           ; función BIOS: leer sector
+    mov al, 1              ; número de sectores a leer
+    mov ch, 0              ; cilindro
+    mov cl, 2              ; sector (el kernel está en el segundo sector)
+    mov dh, 0              ; cabeza
+    mov dl, [boot_drive]   ; unidad de arranque
+    mov bx, 0x1000         ; dirección destino en memoria
 
-wait_key:
-    ; Esperar tecla
-    mov ah, 0x00
-    int 0x16
-    cmp al, '1'
-    je boot_linux
-    cmp al, '2'
-    je boot_bsd
-    jmp wait_key
+    int 0x13               ; llamada BIOS para leer disco
 
-boot_linux:
-    mov si, linux_text
-    call print_string
-    jmp $
+    jc disk_error          ; si falla, saltar a error
 
-boot_bsd:
-    mov si, bsd_text
-    call print_string
-    jmp $
+    ; Saltar al kernel cargado en 0x1000
+    jmp 0x1000
 
-; Rutina para imprimir cadenas
-print_string:
-    mov ah, 0x0E
-.next_char:
+disk_error:
+    ; Mensaje de error simple
+    mov si, error_msg
+.print_char:
     lodsb
     cmp al, 0
-    je .done
+    je .halt
+    mov ah, 0x0E
     int 0x10
-    jmp .next_char
-.done:
-    ret
+    jmp .print_char
+.halt:
+    hlt
+    jmp .halt
 
-menu_text db "UNILO Bootloader",0x0D,0x0A
-          db "1) Arrancar Linux",0x0D,0x0A
-          db "2) Arrancar BSD",0x0D,0x0A,0
-linux_text db "Cargando kernel Linux...",0
-bsd_text   db "Cargando kernel BSD...",0
+; Variables y datos
+boot_drive db 0
+error_msg db 'Error al leer kernel',0
 
-; Firma MBR
+; Rellenar hasta 512 bytes y firma de arranque
 times 510-($-$$) db 0
 dw 0xAA55
